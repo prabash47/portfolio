@@ -47,3 +47,21 @@ musicToggle.addEventListener('click', (e) => {
         musicToggle.textContent = "▶️";
     }
 });
+
+
+async function loadCloudinaryGallery() {
+    const response = await fetch("data/gallery.json");
+    const images = await response.json();
+
+    const gallery = document.getElementById("cloudinary-gallery");
+
+    gallery.innerHTML = images.map(image => `
+        <img
+            src="${image.url}"
+            alt="Portfolio project"
+            loading="lazy"
+        >
+    `).join("");
+}
+
+loadCloudinaryGallery();
