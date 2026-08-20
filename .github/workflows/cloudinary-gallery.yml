@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Cloudinary images
+      - name: Generate gallery.json from Cloudinary
         env:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
           CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
@@ -32,39 +32,46 @@ jobs:
 
           const timestamp = Math.floor(Date.now() / 1000);
 
-          const paramsToSign = `expression=asset_folder:test&timestamp=${timestamp}${apiSecret}`;
+          const stringToSign =
+            `asset_folder=test&max_results=500&timestamp=${timestamp}${apiSecret}`;
+
           const signature = crypto
             .createHash("sha1")
-            .update(paramsToSign)
+            .update(stringToSign)
             .digest("hex");
 
           const body = new URLSearchParams({
-            expression: "asset_folder:test",
+            asset_folder: "test",
             max_results: "500",
-            timestamp: timestamp.toString(),
+            timestamp: String(timestamp),
             api_key: apiKey,
             signature: signature
           });
 
-          fetch(`https://api.cloudinary.com/v1_1/${cloudName}/resources/search`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded"
-            },
-            body
-          })
-          .then(async res => {
-            if (!res.ok) {
-              throw new Error(await res.text());
+          fetch(
+            `https://api.cloudinary.com/v1_1/${cloudName}/resources/search`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded"
+              },
+              body: body.toString()
+            }
+          )
+          .then(async (response) => {
+            const text = await response.text();
+
+            if (!response.ok) {
+              throw new Error(text);
             }
 
-            const data = await res.json();
+            const data = JSON.parse(text);
 
-            const images = (data.resources || []).map(item => ({
-              public_id: item.public_id,
-              url: item.secure_url,
-              width: item.width,
-              height: item.height
+            const images = (data.resources || []).map((image) => ({
+              public_id: image.public_id,
+              url: image.secure_url,
+              width: image.width,
+              height: image.height
             }));
 
             fs.mkdirSync("data", { recursive: true });
@@ -74,21 +81,24 @@ jobs:
               JSON.stringify(images, null, 2)
             );
 
-            console.log(`Found ${images.length} images`);
+            console.log(`Found ${images.length} images.`);
           })
-          .catch(err => {
-            console.error(err);
+          .catch((error) => {
+            console.error(error);
             process.exit(1);
           });
           EOF
 
-      - name: Commit gallery
+      - name: Commit gallery.json
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add data/gallery.json
 
-          git diff --cached --quiet || git commit -m "Update Cloudinary gallery"
-
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "Update Cloudinary gallery [skip ci]"
+            git push
+          fi
